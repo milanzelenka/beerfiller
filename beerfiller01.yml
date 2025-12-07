@@ -1,0 +1,663 @@
+substitutions:
+  devname: 'beerfiller01'
+  devtitle: 'BeerFiller'
+  project: 'pivovar66'
+
+globals:
+  - id: millis_send
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: millis_diff
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: error_state
+    type: int
+    restore_value: false
+    initial_value: '0'
+  
+esphome:
+  name: "${devname}"
+  project:
+    name: "esphome.${project}"
+    version: "1.0"
+
+esp32:
+  variant: esp32
+  framework:
+    type: esp-idf
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_pass
+    - ssid: !secret wifi_ssid_bck
+      password: !secret wifi_pass_bck
+
+#ethernet:
+#  type: LAN8720
+#  mdc_pin: GPIO23
+#  mdio_pin: GPIO18
+#  clk_mode: GPIO17_OUT
+#  phy_addr: 0
+#  manual_ip:
+#    static_ip: 10.69.0.80
+#    gateway: 10.69.0.1
+#    subnet: 255.255.255.0
+#    dns1: 10.69.0.1
+
+api:
+  password: !secret api_pass
+  reboot_timeout: "0s"
+
+ota:
+  platform: esphome
+  password: !secret api_pass
+    
+logger:
+  level: INFO # DEBUG #WARN
+
+web_server:
+  port: 80
+  version: 2
+  local: true
+
+i2c:
+  sda: 4
+  scl: 5
+  scan: true
+  id: bus_a
+
+mcp23017:
+  - id: 'mcp23017_hub_ext'
+    address: 0x20
+
+pcf8574:
+  - id: 'pcf8574_hub_out_1'  # for output channel 1-8
+    address: 0x24
+
+  - id: 'pcf8574_hub_out_2'  # for output channel 9-16
+    address: 0x25
+
+  - id: 'pcf8574_hub_in_1'  # for input channel 1-8
+    address: 0x22
+
+  - id: 'pcf8574_hub_in_2'  # for input channel 9-16
+    address: 0x21
+
+# Reay outputs
+switch:
+  - platform: gpio
+    name: "${devtitle} A Valve Air"
+    id: "${devname}_a_valve_air"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 0
+      mode: OUTPUT
+      inverted: true
+    interlock:
+      - "${devname}_a_valve_beer"
+
+  - platform: gpio
+    name: "${devtitle} A Valve Beer"
+    id: "${devname}_a_valve_beer"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 1
+      mode: OUTPUT
+      inverted: true
+    interlock:
+      - "${devname}_a_valve_air"
+
+  - platform: gpio
+    name: "${devtitle} A Valve Drain"
+    id: "${devname}_a_valve_drain"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 2
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "${devtitle} A Valve Drizzle"
+    id: "${devname}_a_valve_drizzle"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 3
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "${devtitle} B Valve Air"
+    id: "${devname}_b_valve_air"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 4
+      mode: OUTPUT
+      inverted: true
+    interlock:
+      - "${devname}_b_valve_beer"
+
+  - platform: gpio
+    name: "${devtitle} B Valve Beer"
+    id: "${devname}_b_valve_beer"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 5
+      mode: OUTPUT
+      inverted: true
+    interlock:
+      - "${devname}_b_valve_air"
+
+  - platform: gpio
+    name: "${devtitle} B Valve Drain"
+    id: "${devname}_b_valve_drain"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 6
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "${devtitle} B Valve Drizzle"
+    id: "${devname}_b_valve_drizzle"
+    icon: "mdi:pipe-valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 7
+      mode: OUTPUT
+      inverted: true
+
+### SCRIPT SWITCHES (for starting/stopping scripts)
+  - platform: template
+    id: "${devname}_script_a_filling_control"
+    name: "${devtitle} Script A Filling Cycle"
+    lambda: 'return (id(${devname}_script_a_filling_cycle).is_running());'
+    turn_on_action:
+      - script.execute: "${devname}_script_a_filling_cycle"
+    turn_off_action:
+      - script.stop: "${devname}_script_a_filling_cycle"
+      - switch.turn_off: "${devname}_a_valve_air"
+      - switch.turn_off: "${devname}_a_valve_beer"
+      - lambda: 'id(${devname}_a_led_startstop).turn_on().set_effect("none").perform();'
+      - lambda: 'id(${devname}_a_led_ok).turn_on().set_effect("none").perform();'
+      - delay: 1s
+      - light.turn_off: { id: "${devname}_a_led_ok" }
+      - logger.log: { format: "*** FILLING A: SCRIPT CANCELED", level: INFO }
+
+  - platform: template
+    id: "${devname}_script_a_bottle_remove_control"
+    name: "${devtitle} Script A Bottle Remove"
+    lambda: 'return (id(${devname}_script_a_bottle_remove).is_running());'
+    turn_on_action:
+      - script.execute: "${devname}_script_a_bottle_remove"
+    turn_off_action:
+      - script.stop: "${devname}_script_a_bottle_remove"
+      - switch.turn_off: "${devname}_a_valve_air"
+      - switch.turn_off: "${devname}_a_valve_beer"
+      - switch.turn_on: "${devname}_a_valve_drizzle"
+      - lambda: 'id(${devname}_a_led_startstop).turn_on().set_effect("none").perform();'
+      - lambda: 'id(${devname}_a_led_ok).turn_on().set_effect("none").perform();'
+      - delay: 1s
+      - light.turn_off: { id: "${devname}_a_led_ok" }
+      - logger.log: { format: "*** REMOVE A: SCRIPT CANCELED", level: INFO }
+
+  - platform: template
+    id: "${devname}_script_b_filling_control"
+    name: "${devtitle} Script B Filling Cycle"
+    lambda: 'return (id(${devname}_script_b_filling_cycle).is_running());'
+    turn_on_action:
+      - script.execute: "${devname}_script_b_filling_cycle"
+    turn_off_action:
+      - script.stop: "${devname}_script_b_filling_cycle"
+      - switch.turn_off: "${devname}_b_valve_air"
+      - switch.turn_off: "${devname}_b_valve_beer"
+      - lambda: 'id(${devname}_b_led_startstop).turn_on().set_effect("none").perform();'
+      - lambda: 'id(${devname}_b_led_ok).turn_on().set_effect("none").perform();'
+      - delay: 1s
+      - light.turn_off: { id: "${devname}_b_led_ok" }
+      - logger.log: { format: "*** FILLING B: SCRIPT CANCELED", level: INFO }
+
+  - platform: template
+    id: "${devname}_script_b_bottle_remove_control"
+    name: "${devtitle} Script B Bottle Remove"
+    lambda: 'return (id(${devname}_script_b_bottle_remove).is_running());'
+    turn_on_action:
+      - script.execute: "${devname}_script_b_bottle_remove"
+    turn_off_action:
+      - script.stop: "${devname}_script_b_bottle_remove"
+      - switch.turn_off: "${devname}_b_valve_air"
+      - switch.turn_off: "${devname}_b_valve_beer"
+      - switch.turn_on: "${devname}_b_valve_drizzle"
+      - lambda: 'id(${devname}_b_led_startstop).turn_on().set_effect("none").perform();'
+      - lambda: 'id(${devname}_b_led_ok).turn_on().set_effect("none").perform();'
+      - delay: 1s
+      - light.turn_off: { id: "${devname}_b_led_ok" }
+      - logger.log: { format: "*** REMOVE B: SCRIPT CANCELED", level: INFO }
+
+# LED Outputs on external MCP23017 board (I2C)
+output:
+  - platform: gpio
+    id: "${devname}_output_a_led_yellow"
+    pin:
+      mcp23xxx: mcp23017_hub_ext
+      number: 0 #A0
+      mode: OUTPUT
+      inverted: true
+  - platform: gpio
+    id: "${devname}_output_a_led_green"
+    pin:
+      mcp23xxx: mcp23017_hub_ext
+      number: 1 #A1
+      mode: OUTPUT
+      inverted: true
+  - platform: gpio
+    id: "${devname}_output_b_led_yellow"
+    pin:
+      mcp23xxx: mcp23017_hub_ext
+      number: 2 #A2
+      mode: OUTPUT
+      inverted: true
+  - platform: gpio
+    id: "${devname}_output_b_led_green"
+    pin:
+      mcp23xxx: mcp23017_hub_ext
+      number: 3 #A3
+      mode: OUTPUT
+      inverted: true
+
+# LED Lights definitions
+light:
+  - platform: binary
+    name: "${devtitle} A LED OK"
+    id: "${devname}_a_led_ok"
+    icon: "mdi:lightbulb"
+    output: "${devname}_output_a_led_yellow"
+    restore_mode: ALWAYS_OFF
+    effects:
+      - strobe:
+          name: blinking
+          colors: 
+            - state: true
+              duration: 1s
+            - state: false
+              duration: 700ms
+  - platform: binary
+    name: "${devtitle} A LED Start/Stop"
+    id: "${devname}_a_led_startstop"
+    icon: "mdi:lightbulb"
+    output: "${devname}_output_a_led_green"
+    restore_mode: ALWAYS_OFF
+    effects:
+      - strobe:
+          name: blinking
+          colors: 
+            - state: true
+              duration: 1s
+            - state: false
+              duration: 700ms
+  - platform: binary
+    name: "${devtitle} B LED OK"
+    id: "${devname}_b_led_ok"
+    icon: "mdi:lightbulb"
+    output: "${devname}_output_b_led_yellow"
+    restore_mode: ALWAYS_OFF
+    effects:
+      - strobe:
+          name: blinking
+          colors: 
+            - state: true
+              duration: 1s
+            - state: false
+              duration: 700ms
+  - platform: binary
+    name: "${devtitle} B LED Start/Stop"
+    id: "${devname}_b_led_startstop"
+    icon: "mdi:lightbulb"
+    output: "${devname}_output_b_led_green"
+    restore_mode: ALWAYS_OFF
+    effects:
+      - strobe:
+          name: blinking
+          colors: 
+            - state: true
+              duration: 1s
+            - state: false
+              duration: 700ms
+# Service buttons
+button:
+  - platform: safe_mode
+    id: "${devname}_safe_mode_boot"
+    name: Safe Mode Boot
+    entity_category: diagnostic
+
+  - platform: restart
+    id: "${devname}_restart_device"
+    name: "Restart Device"
+
+binary_sensor:
+  - platform: gpio
+    name: "${devtitle} Power Switch"
+    id: "${devname}_power_switch"
+    icon: "mdi:power"
+    pin:
+      pcf8574: pcf8574_hub_in_1
+      number: 0
+      mode: INPUT
+      inverted: true
+    on_press:
+      - light.turn_on: { id: "${devname}_a_led_startstop" }
+      - light.turn_on: { id: "${devname}_a_led_ok" }
+      - light.turn_on: { id: "${devname}_b_led_startstop" }
+      - light.turn_on: { id: "${devname}_b_led_ok" }
+      - delay: 1s
+      - light.turn_off: { id: "${devname}_a_led_ok" }
+      - light.turn_off: { id: "${devname}_b_led_ok" }
+    on_release:
+      - light.turn_off: { id: "${devname}_a_led_startstop" }
+      - light.turn_off: { id: "${devname}_a_led_ok" }
+      - light.turn_off: { id: "${devname}_b_led_startstop" }
+      - light.turn_off: { id: "${devname}_b_led_ok" }
+
+  - platform: gpio
+    name: "${devtitle} A Button OK"
+    id: "${devname}_a_button_ok"
+    icon: "mdi:gesture-tap-button"
+    pin:
+      pcf8574: pcf8574_hub_in_2
+      number: 6
+      mode: INPUT
+      inverted: true
+    on_click:
+    - min_length: 50ms
+      max_length: 1499ms
+      then:
+        - if:
+            condition:
+              - binary_sensor.is_on: "${devname}_power_switch"
+              - light.is_on: "${devname}_a_led_ok"
+            then:
+              - switch.turn_on: "${devname}_script_a_bottle_remove_control"
+              - delay: 1000ms
+    - min_length: 1500ms
+      max_length: 10000ms
+      then:
+        - logger.log: "A OK LONG press..."
+        - switch.turn_off: "${devname}_script_a_bottle_remove_control"
+  
+  - platform: gpio
+    name: "${devtitle} A Button Start/Stop"
+    id: "${devname}_a_button_startstop"
+    icon: "mdi:restart"
+    pin:
+      pcf8574: pcf8574_hub_in_2
+      number: 7
+      mode: INPUT
+      inverted: true
+    on_click:
+    - min_length: 50ms
+      max_length: 1499ms
+      then:
+        - if:
+            condition:
+              - binary_sensor.is_on: "${devname}_power_switch"
+              - light.is_on: "${devname}_a_led_startstop"
+            then:
+              - switch.turn_on: "${devname}_script_a_filling_control"
+              - delay: 1000ms
+    - min_length: 1500ms
+      max_length: 10000ms
+      then:
+        - logger.log: "A Start/Stop LONG press..."
+        - switch.turn_off: "${devname}_script_a_filling_control"
+
+  - platform: gpio
+    name: "${devtitle} B Button OK"
+    id: "${devname}_b_button_ok"
+    icon: "mdi:gesture-tap-button"
+    pin:
+      pcf8574: pcf8574_hub_in_2
+      number: 4
+      mode: INPUT
+      inverted: true
+    on_click:
+    - min_length: 50ms
+      max_length: 1499ms
+      then:
+        - if:
+            condition:
+              - binary_sensor.is_on: "${devname}_power_switch"
+              - light.is_on: "${devname}_b_led_ok"
+            then:
+              - switch.turn_on: "${devname}_script_b_bottle_remove_control"
+              - delay: 1000ms
+    - min_length: 1500ms
+      max_length: 10000ms
+      then:
+        - logger.log: "B OK LONG press..."
+        - switch.turn_off: "${devname}_script_b_bottle_remove_control"
+  
+  - platform: gpio
+    name: "${devtitle} B Button Start/Stop"
+    id: "${devname}_b_button_startstop"
+    icon: "mdi:restart"
+    pin:
+      pcf8574: pcf8574_hub_in_2
+      number: 5
+      mode: INPUT
+      inverted: true
+    on_click:
+    - min_length: 50ms
+      max_length: 1499ms
+      then:
+        - if:
+            condition:
+              - binary_sensor.is_on: "${devname}_power_switch"
+              - light.is_on: "${devname}_b_led_startstop"
+            then:
+              - switch.turn_on: "${devname}_script_b_filling_control"
+              - delay: 1000ms
+    - min_length: 1500ms
+      max_length: 10000ms
+      then:
+        - logger.log: "B Start/Stop LONG press..."
+        - switch.turn_off: "${devname}_script_b_filling_control"
+
+
+number:
+  - platform: template
+    name: "${devtitle} CO2 Lavage Duration (sec)"
+    id: "${devname}_lavage_duration_sec"
+    optimistic: true
+    min_value: 1
+    max_value: 20
+    step: 1
+    initial_value: 5
+    restore_value: true
+    icon: "mdi:timer"
+  - platform: template
+    name: "${devtitle} Presurize Duration (ms)"
+    id: "${devname}_presurize_duration_ms"
+    optimistic: true
+    min_value: 100
+    max_value: 5000
+    step: 100
+    initial_value: 2000
+    restore_value: true
+    icon: "mdi:timer"
+  - platform: template
+    name: "${devtitle} Start Filling Delay (ms)"
+    id: "${devname}_start_filling_delay_ms"
+    optimistic: true
+    min_value: 100
+    max_value: 5000
+    step: 100
+    initial_value: 1000
+    restore_value: true
+    icon: "mdi:timer"
+  - platform: template
+    name: "${devtitle} Filling Timeout (sec)"
+    id: "${devname}_filling_timeout_sec"
+    optimistic: true
+    min_value: 30
+    max_value: 300
+    step: 1
+    initial_value: 30
+    restore_value: true
+    icon: "mdi:timer"
+  - platform: template
+    name: "${devtitle} Filling De-pressurize Delay (ms)"
+    id: "${devname}_filling_depress_delay_ms"
+    optimistic: true
+    min_value: 0
+    max_value: 5000
+    step: 100
+    initial_value: 1000
+    restore_value: true
+    icon: "mdi:timer"
+  - platform: template
+    name: "${devtitle} CO2-Shock Length (ms)"
+    id: "${devname}_co2_shock_length_ms"
+    optimistic: true
+    min_value: 0
+    max_value: 500
+    step: 1
+    initial_value: 10
+    restore_value: true
+    icon: "mdi:timer"
+  - platform: template
+    name: "${devtitle} Post Shock Delay (ms)"
+    id: "${devname}_post_shock_delay_ms"
+    optimistic: true
+    min_value: 0
+    max_value: 5000
+    step: 100
+    initial_value: 1000
+    restore_value: true
+    icon: "mdi:timer"
+
+script:
+  # SCRIPT: FILLING CYCLE
+  - id: "${devname}_script_a_filling_cycle"
+    mode: single
+    then:
+      - logger.log: { format: "*** FILLING A: SCRIPT STARTED...", level: INFO }
+      - lambda: 'id(${devname}_a_led_startstop).turn_on().set_effect("blinking").perform();'
+      - light.turn_off: { id: "${devname}_a_led_ok" }
+      - logger.log: { format: "* FILLING A: CO2 Lavage", level: INFO }
+      - switch.turn_off: "${devname}_a_valve_beer"
+      - switch.turn_off: "${devname}_a_valve_drizzle"
+      - switch.turn_on: "${devname}_a_valve_drain"
+      - switch.turn_on: "${devname}_a_valve_air"
+      - delay: !lambda "return (id(${devname}_lavage_duration_sec).state * 1000);"
+      - switch.turn_off: "${devname}_a_valve_drain"
+      - logger.log: { format: "* FILLING A: CO2 Lavage complete, pressurizing...", level: INFO }
+      - delay: !lambda "return (id(${devname}_presurize_duration_ms).state);"
+      - switch.turn_off: "${devname}_a_valve_air"
+      - logger.log: { format: "* FILLING A: Filling Started", level: INFO }
+      - switch.turn_on: "${devname}_a_valve_drizzle"
+      - delay: !lambda "return (id(${devname}_start_filling_delay_ms).state);"
+      - switch.turn_on: "${devname}_a_valve_beer"
+      - wait_until:
+          condition: { binary_sensor.is_on: "${devname}_a_button_startstop" }
+          timeout: !lambda "return (id(${devname}_filling_timeout_sec).state * 1000);"
+      - switch.turn_off: "${devname}_a_valve_beer"
+      - light.turn_off: { id: "${devname}_a_led_startstop" }
+      - logger.log: { format: "* FILLING A: Filling stopped, continue de-pressurization", level: INFO }
+      - delay: !lambda "return (id(${devname}_filling_depress_delay_ms).state);"
+      - logger.log: { format: "* FILLING A: De-presurization done, bottle ready for removal process...", level: INFO }
+      - switch.turn_off: "${devname}_a_valve_drizzle"
+      - light.turn_on: { id: "${devname}_a_led_ok" }
+      - logger.log: { format: "*** FILLING A: SCRIPT ENDED.", level: INFO }
+
+  - id: "${devname}_script_b_filling_cycle"
+    mode: single
+    then:
+      - logger.log: { format: "*** FILLING B: SCRIPT STARTED...", level: INFO }
+      - lambda: 'id(${devname}_b_led_startstop).turn_on().set_effect("blinking").perform();'
+      - light.turn_off: { id: "${devname}_b_led_ok" }
+      - logger.log: { format: "* FILLING B: CO2 Lavage", level: INFO }
+      - switch.turn_off: "${devname}_b_valve_beer"
+      - switch.turn_off: "${devname}_b_valve_drizzle"
+      - switch.turn_on: "${devname}_b_valve_drain"
+      - switch.turn_on: "${devname}_b_valve_air"
+      - delay: !lambda "return (id(${devname}_lavage_duration_sec).state * 1000);"
+      - switch.turn_off: "${devname}_b_valve_drain"
+      - logger.log: { format: "* FILLING B: CO2 Lavage complete, pressurizing...", level: INFO }
+      - delay: !lambda "return (id(${devname}_presurize_duration_ms).state);"
+      - switch.turn_off: "${devname}_b_valve_air"
+      - logger.log: { format: "* FILLING B: Filling Started", level: INFO }
+      - switch.turn_on: "${devname}_b_valve_drizzle"
+      - delay: !lambda "return (id(${devname}_start_filling_delay_ms).state);"
+      - switch.turn_on: "${devname}_b_valve_beer"
+      - wait_until:
+          condition: { binary_sensor.is_on: "${devname}_b_button_startstop" }
+          timeout: !lambda "return (id(${devname}_filling_timeout_sec).state * 1000);"
+      - switch.turn_off: "${devname}_b_valve_beer"
+      - light.turn_off: { id: "${devname}_b_led_startstop" }
+      - logger.log: { format: "* FILLING B: Filling stopped, continue de-pressurization", level: INFO }
+      - delay: !lambda "return (id(${devname}_filling_depress_delay_ms).state);"
+      - logger.log: { format: "* FILLING B: De-presurization done, bottle ready for removal process...", level: INFO }
+      - switch.turn_off: "${devname}_b_valve_drizzle"
+      - light.turn_on: { id: "${devname}_b_led_ok" }
+      - logger.log: { format: "*** FILLING B: SCRIPT ENDED.", level: INFO }
+
+
+  # SCRIPT: REMOVE BOTTLE
+  - id: "${devname}_script_a_bottle_remove"
+    mode: single
+    then:
+      - logger.log: { format: "***REMOVE A: SCRIPT STARTED...", level: INFO }
+      - lambda: 'id(${devname}_a_led_ok).turn_on().set_effect("blinking").perform();'
+      - light.turn_off: { id: "${devname}_a_led_startstop" }
+      - if:
+          condition:
+            - lambda: "return (id(${devname}_co2_shock_length_ms).state > 0);"
+          then:
+            - logger.log: { format: "* REMOVE A: CO2 Shock", level: INFO }
+            - switch.turn_on: "${devname}_a_valve_air"
+            - delay: !lambda "return (id(${devname}_co2_shock_length_ms).state);"
+            - switch.turn_off: "${devname}_a_valve_air"
+            - delay: !lambda "return (id(${devname}_post_shock_delay_ms).state);"
+      - switch.turn_on: "${devname}_a_valve_drizzle"
+      - delay: 3s
+      - light.turn_off: { id: "${devname}_a_led_ok" }
+      - light.turn_on: { id: "${devname}_a_led_startstop" }
+      - logger.log: { format: "*** REMOVE A: SCRIPT ENDED.", level: INFO }
+
+  - id: "${devname}_script_b_bottle_remove"
+    mode: single
+    then:
+      - logger.log: { format: "***REMOVE B: SCRIPT STARTED...", level: INFO }
+      - lambda: 'id(${devname}_b_led_ok).turn_on().set_effect("blinking").perform();'
+      - light.turn_off: { id: "${devname}_b_led_startstop" }
+      - if:
+          condition:
+            - lambda: "return (id(${devname}_co2_shock_length_ms).state > 0);"
+          then:
+            - logger.log: { format: "* REMOVE B: CO2 Shock", level: INFO }
+            - switch.turn_on: "${devname}_b_valve_air"
+            - delay: !lambda "return (id(${devname}_co2_shock_length_ms).state);"
+            - switch.turn_off: "${devname}_b_valve_air"
+            - delay: !lambda "return (id(${devname}_post_shock_delay_ms).state);"
+      - switch.turn_on: "${devname}_b_valve_drizzle"
+      - delay: 3s
+      - light.turn_off: { id: "${devname}_b_led_ok" }
+      - light.turn_on: { id: "${devname}_b_led_startstop" }
+      - logger.log: { format: "*** REMOVE B: SCRIPT ENDED.", level: INFO }
