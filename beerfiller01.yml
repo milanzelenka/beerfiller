@@ -37,6 +37,9 @@ esp32:
   variant: esp32
   framework:
     type: esp-idf
+    advanced:
+      minimum_chip_revision: "3.1"
+      sram1_as_iram: true
 
 wifi:
   networks:
@@ -489,7 +492,7 @@ button:
     name: "Restart Device"
 
 sensor:
-# ***** A Pulses *****
+# ***** A Filling Sensors *****
   - platform: pulse_counter
     id: "${devname}_a_pulse_counter"
     name: "${devtitle} A Pulse Rate"
@@ -559,7 +562,19 @@ sensor:
 
       return std::max(0.0f, target);
 
-# **** B Pulses ***
+  - platform: template
+    id: "${devname}_a_fill_progress"
+    name: "${devtitle} A Fill Progress"
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 500ms
+    lambda: |-
+      const float filled = id(${devname}_a_filled_volume_ml).state;
+      const float target = id(${devname}_a_effective_target_volume_ml).state;
+      if (isnan(filled) || isnan(target) || target <= 0.0f) { return 0.0f; }
+      return std::max(0.0f, std::min(100.0f, filled / target * 100.0f));
+
+# **** B Filling Sensors ***
 
   - platform: pulse_counter
     id: "${devname}_b_pulse_counter"
@@ -629,7 +644,19 @@ sensor:
         id(${devname}_volume_correction_ml).state;
 
       return std::max(0.0f, target);
-        
+
+  - platform: template
+    id: "${devname}_b_fill_progress"
+    name: "${devtitle} B Fill Progress"
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 500ms
+    lambda: |-
+      const float filled = id(${devname}_b_filled_volume_ml).state;
+      const float target = id(${devname}_b_effective_target_volume_ml).state;
+      if (isnan(filled) || isnan(target) || target <= 0.0f) { return 0.0f; }
+      return std::max(0.0f, std::min(100.0f, filled / target * 100.0f));
+
 binary_sensor:
   - platform: gpio
     name: "${devtitle} Power Switch"
