@@ -90,12 +90,9 @@ The controller is under active development and continuously tested on a real thr
 
 Future development includes:
 
-* Flow calibration wizard
 * Cleaning/CIP mode
-* Recipe profiles
 * Statistics
 * Maintenance counters
-* Multi-device support
 
 ---
 
