@@ -22,7 +22,12 @@ esphome:
   project:
     name: "esphome.${project}"
     version: "1.0"
-
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: "${devname}_apply_bottle_volume"
+      - script.execute: "${devname}_onoff_state"
+        
 esp32:
   variant: esp32
   framework:
@@ -195,7 +200,7 @@ switch:
       mode: OUTPUT
       inverted: true
     interlock:
-      - "${devname}_b_valve_beer"
+      - "${devname}_c_valve_beer"
 
   - platform: gpio
     name: "${devtitle} C Valve Beer"
@@ -204,11 +209,11 @@ switch:
     restore_mode: ALWAYS_OFF
     pin:
       pcf8574: pcf8574_hub_out_2
-      number: 1
+      number: 4 # PIN 1 on HUB 2 is BAD => MOVED TO PIN 4
       mode: OUTPUT
       inverted: true
     interlock:
-      - "${devname}_b_valve_air"
+      - "${devname}_c_valve_air"
 
   - platform: gpio
     name: "${devtitle} C Valve Drain"
@@ -477,6 +482,141 @@ button:
     id: "${devname}_restart_device"
     name: "Restart Device"
 
+sensor:
+# ***** A Pulses *****
+  - platform: pulse_counter
+    id: "${devname}_a_pulse_counter"
+    name: "${devtitle} A Pulse Rate"
+    internal: true  # non internal is useless for production use
+    pin:
+      number: GPIO32
+      mode:
+        input: true
+        pullup: false
+
+    count_mode:
+      rising_edge: DISABLE
+      falling_edge: INCREMENT
+
+    use_pcnt: true
+    internal_filter: 13us
+    update_interval: 50ms
+
+    unit_of_measurement: "pulses/min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+
+    total:
+      id: "${devname}_a_pulse_total"
+      name: "${devtitle} A Filling Pulses"
+      internal: true  # non internal is useless for production use
+      unit_of_measurement: "pulses"
+      accuracy_decimals: 0
+      state_class: measurement
+
+  - platform: template
+    id: "${devname}_a_filled_volume_ml"
+    name: "${devtitle} A Filled Volume"
+    icon: "mdi:cup-water"
+    unit_of_measurement: "ml"
+    accuracy_decimals: 0
+    update_interval: 50ms
+    lambda: |-
+      if (isnan(id(${devname}_a_pulse_total).state) ||
+          isnan(id(${devname}_ml_per_pulse).state)) {
+        return 0.0f;
+      }
+
+      return id(${devname}_a_pulse_total).state
+             * id(${devname}_ml_per_pulse).state;
+
+  - platform: template
+    id: "${devname}_a_effective_target_volume_ml"
+    name: "${devtitle} A Effective Target Volume"
+    icon: "mdi:target"
+    unit_of_measurement: "ml"
+    accuracy_decimals: 0
+    update_interval: 250ms
+    lambda: |-
+      if (isnan(id(${devname}_bottle_volume_ml).state) ||
+          isnan(id(${devname}_volume_correction_ml).state)) {
+        return 0.0f;
+      }
+
+      const float target =
+        id(${devname}_bottle_volume_ml).state +
+        id(${devname}_volume_correction_ml).state;
+
+      return std::max(0.0f, target);
+
+# **** B Pulses ***
+
+  - platform: pulse_counter
+    id: "${devname}_b_pulse_counter"
+    name: "${devtitle} B Pulse Rate"
+    internal: true  # non internal is useless for production use
+    pin:
+      number: GPIO33
+      mode:
+        input: true
+        pullup: false
+
+    count_mode:
+      rising_edge: DISABLE
+      falling_edge: INCREMENT
+
+    use_pcnt: true
+    internal_filter: 13us
+    update_interval: 50ms
+
+    unit_of_measurement: "pulses/min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+
+    total:
+      id: "${devname}_b_pulse_total"
+      name: "${devtitle} B Filling Pulses"
+      internal: true  # non internal is useless for production use
+      unit_of_measurement: "pulses"
+      accuracy_decimals: 0
+      state_class: measurement
+
+  - platform: template
+    id: "${devname}_b_filled_volume_ml"
+    name: "${devtitle} B Filled Volume"
+    icon: "mdi:cup-water"
+    unit_of_measurement: "ml"
+    accuracy_decimals: 0
+    update_interval: 50ms
+    lambda: |-
+      if (isnan(id(${devname}_b_pulse_total).state) ||
+          isnan(id(${devname}_ml_per_pulse).state)) {
+        return 0.0f;
+      }
+
+      return id(${devname}_b_pulse_total).state
+            * id(${devname}_ml_per_pulse).state;
+
+  - platform: template
+    id: "${devname}_b_effective_target_volume_ml"
+    name: "${devtitle} B Effective Target Volume"
+    icon: "mdi:target"
+    unit_of_measurement: "ml"
+    accuracy_decimals: 0
+    update_interval: 250ms
+    lambda: |-
+      if (isnan(id(${devname}_bottle_volume_ml).state) ||
+          isnan(id(${devname}_volume_correction_ml).state)) {
+        return 0.0f;
+      }
+
+      const float target =
+        id(${devname}_bottle_volume_ml).state +
+        id(${devname}_volume_correction_ml).state;
+
+      return std::max(0.0f, target);
+
+        
 binary_sensor:
   - platform: gpio
     name: "${devtitle} Power Switch"
@@ -487,24 +627,11 @@ binary_sensor:
       number: 0
       mode: INPUT
       inverted: true
-    on_press:
-      - light.turn_on: { id: "${devname}_a_led_startstop" }
-      - light.turn_on: { id: "${devname}_a_led_ok" }
-      - light.turn_on: { id: "${devname}_b_led_startstop" }
-      - light.turn_on: { id: "${devname}_b_led_ok" }
-      - light.turn_on: { id: "${devname}_c_led_startstop" }
-      - light.turn_on: { id: "${devname}_c_led_ok" }
-      - delay: 1s
-      - light.turn_off: { id: "${devname}_a_led_ok" }
-      - light.turn_off: { id: "${devname}_b_led_ok" }
-      - light.turn_off: { id: "${devname}_c_led_ok" }
-    on_release:
-      - light.turn_off: { id: "${devname}_a_led_startstop" }
-      - light.turn_off: { id: "${devname}_a_led_ok" }
-      - light.turn_off: { id: "${devname}_b_led_startstop" }
-      - light.turn_off: { id: "${devname}_b_led_ok" }
-      - light.turn_off: { id: "${devname}_c_led_startstop" }
-      - light.turn_off: { id: "${devname}_c_led_ok" }
+    on_state:
+      then:
+        - script.execute: "${devname}_onoff_state"
+    filters:
+      - delayed_on_off: 50ms  # debounce
 
   - platform: gpio
     name: "${devtitle} A Button OK"
@@ -661,7 +788,38 @@ binary_sensor:
       then:
         - logger.log: "C Start/Stop LONG press..."
         - switch.turn_off: "${devname}_script_c_filling_control"
+  - platform: template
+    id: "${devname}_a_bottle_full"
+    name: "${devtitle} A Bottle Full"
+    icon: "mdi:bottle-soda-classic"
+    lambda: |-
+      const float pulses = id(${devname}_a_pulse_total).state;
+      const float bottle_volume = id(${devname}_bottle_volume_ml).state;
+      const float correction = id(${devname}_volume_correction_ml).state;
+      const float ml_per_pulse = id(${devname}_ml_per_pulse).state;
+      if (isnan(pulses) || isnan(bottle_volume) || isnan(correction) || isnan(ml_per_pulse) || ml_per_pulse <= 0.0f) { return false; }
+      const float effective_volume = std::max(0.0f, bottle_volume + correction);
+      if (effective_volume < ml_per_pulse) { return false; }
+      const int target_pulses = static_cast<int>(ceilf(effective_volume / ml_per_pulse));
+      const int current_pulses = static_cast<int>(lroundf(pulses));
+      return current_pulses >= target_pulses;
 
+  - platform: template
+    id: "${devname}_b_bottle_full"
+    name: "${devtitle} B Bottle Full"
+    icon: "mdi:bottle-soda-classic"
+    lambda: |-
+      const float pulses = id(${devname}_b_pulse_total).state;
+      const float bottle_volume = id(${devname}_bottle_volume_ml).state;
+      const float correction = id(${devname}_volume_correction_ml).state;
+      const float ml_per_pulse = id(${devname}_ml_per_pulse).state;
+      if (isnan(pulses) || isnan(bottle_volume) || isnan(correction) || isnan(ml_per_pulse) || ml_per_pulse <= 0.0f) { return false; }
+      const float effective_volume = std::max(0.0f, bottle_volume + correction);
+      if (effective_volume < ml_per_pulse) { return false; }
+      const int target_pulses = static_cast<int>(ceilf(effective_volume / ml_per_pulse));
+      const int current_pulses = static_cast<int>(lroundf(pulses));
+      return current_pulses >= target_pulses;
+  
 number:
   - platform: template
     name: "${devtitle} CO2 Lavage Duration (sec)"
@@ -733,8 +891,142 @@ number:
     initial_value: 1000
     restore_value: true
     icon: "mdi:timer"
+  - platform: template
+    id: "${devname}_bottle_volume_ml"
+    name: "${devtitle} Bottle Volume"
+    icon: "mdi:bottle-soda"
+    unit_of_measurement: "ml"
+    min_value: 0
+    max_value: 5000
+    step: 10
+    initial_value: 750
+    restore_value: true
+    optimistic: true
+    mode: box
+  - platform: template
+    id: "${devname}_volume_correction_ml"
+    name: "${devtitle} Volume Correction"
+    icon: "mdi:tune-vertical"
+    unit_of_measurement: "ml"
+    min_value: -100
+    max_value: 100
+    step: 10
+    initial_value: 0
+    restore_value: true
+    optimistic: true
+    mode: slider
+  - platform: template
+    id: "${devname}_ml_per_pulse"
+    name: "${devtitle} Milliliters Per Pulse"
+    icon: "mdi:pulse"
+    unit_of_measurement: "ml"
+    min_value: 0.1
+    max_value: 100
+    step: 0.1
+    initial_value: 10
+    restore_value: true
+    optimistic: true
+    mode: box
+    entity_category: config
+
+select:
+  - platform: template
+    id: "${devname}_bottle_volume_select"
+    name: "${devtitle} Bottle Volume"
+    icon: mdi:bottle-soda
+    optimistic: true
+    restore_value: true
+    initial_option: "Off"
+
+    options:
+      - "Off"
+      - "330 ml"
+      - "500 ml"
+      - "750 ml"
+      - "1 l"
+      - "1.5 l"
+
+    on_value:
+      then:
+        - script.execute: "${devname}_apply_bottle_volume"
 
 script:
+  # Bottle Volume Select Apply
+  - id: "${devname}_apply_bottle_volume"
+    mode: restart
+    then:
+      - lambda: |-
+          const std::string option = id(${devname}_bottle_volume_select).current_option();
+          float volume_ml = 0;
+
+          if (option == "330 ml") { volume_ml = 330; }
+            else if (option == "500 ml") { volume_ml = 500; }
+              else if (option == "750 ml") { volume_ml = 750; }
+                else if (option == "1 l") { volume_ml = 1000; }
+                  else if (option == "1.5 l") { volume_ml = 1500; }
+
+          auto call = id(${devname}_bottle_volume_ml).make_call();
+          call.set_value(volume_ml);
+          call.perform();
+  # On/Off sequence
+  - id: "${devname}_onoff_state"
+    mode: restart
+    then:
+      - if:
+          condition:
+            binary_sensor.is_on: "${devname}_power_switch"
+          then:
+            - light.turn_on: { id: "${devname}_a_led_startstop" }
+            - light.turn_on: { id: "${devname}_a_led_ok" }
+            - light.turn_on: { id: "${devname}_b_led_startstop" }
+            - light.turn_on: { id: "${devname}_b_led_ok" }
+            - light.turn_on: { id: "${devname}_c_led_startstop" }
+            - light.turn_on: { id: "${devname}_c_led_ok" }
+            - pulse_counter.set_total_pulses:
+                id: "${devname}_a_pulse_counter"
+                value: 0
+            - pulse_counter.set_total_pulses:
+                id: "${devname}_b_pulse_counter"
+                value: 0
+            - component.update: "${devname}_a_pulse_counter"
+            - delay: 1s
+            - light.turn_off: { id: "${devname}_a_led_ok" }
+            - light.turn_off: { id: "${devname}_b_led_ok" }
+            - light.turn_off: { id: "${devname}_c_led_ok" }
+            - switch.turn_off: "${devname}_a_valve_air"
+            - switch.turn_off: "${devname}_a_valve_beer"
+            - switch.turn_off: "${devname}_a_valve_drizzle"
+            - switch.turn_on: "${devname}_a_valve_drain"
+            - switch.turn_off: "${devname}_b_valve_air"
+            - switch.turn_off: "${devname}_b_valve_beer"
+            - switch.turn_off: "${devname}_b_valve_drizzle"
+            - switch.turn_on: "${devname}_b_valve_drain"
+            - switch.turn_off: "${devname}_c_valve_air"
+            - switch.turn_off: "${devname}_c_valve_beer"
+            - switch.turn_off: "${devname}_c_valve_drizzle"
+            - switch.turn_on: "${devname}_c_valve_drain"
+            - logger.log: { format: "* POWERED ON *", level: INFO }
+          else:
+            - light.turn_off: { id: "${devname}_a_led_startstop" }
+            - light.turn_off: { id: "${devname}_a_led_ok" }
+            - light.turn_off: { id: "${devname}_b_led_startstop" }
+            - light.turn_off: { id: "${devname}_b_led_ok" }
+            - light.turn_off: { id: "${devname}_c_led_startstop" }
+            - light.turn_off: { id: "${devname}_c_led_ok" }
+            - switch.turn_off: "${devname}_a_valve_air"
+            - switch.turn_off: "${devname}_a_valve_beer"
+            - switch.turn_off: "${devname}_a_valve_drizzle"
+            - switch.turn_off: "${devname}_a_valve_drain"
+            - switch.turn_off: "${devname}_b_valve_air"
+            - switch.turn_off: "${devname}_b_valve_beer"
+            - switch.turn_off: "${devname}_b_valve_drizzle"
+            - switch.turn_off: "${devname}_b_valve_drain"
+            - switch.turn_off: "${devname}_c_valve_air"
+            - switch.turn_off: "${devname}_c_valve_beer"
+            - switch.turn_off: "${devname}_c_valve_drizzle"
+            - switch.turn_off: "${devname}_c_valve_drain"
+            - logger.log: { format: "* POWERED OFF *", level: INFO }
+
   # SCRIPT: FILLING CYCLE
   - id: "${devname}_script_a_filling_cycle"
     mode: single
@@ -753,13 +1045,21 @@ script:
       - logger.log: { format: "* FILLING A: CO2 Lavage complete, pressurizing...", level: INFO }
       - delay: !lambda "return (id(${devname}_presurize_duration_ms).state);"
       - switch.turn_off: "${devname}_a_valve_air"
+      - logger.log: { format: "* FILLING A: Flow sensor pulses reset", level: INFO }
+      - pulse_counter.set_total_pulses:
+          id: "${devname}_a_pulse_counter"
+          value: 0
+      - component.update: "${devname}_a_pulse_counter"
       - logger.log: { format: "* FILLING A: Filling Started", level: INFO }
       - switch.turn_on: "${devname}_a_valve_drizzle"
       - delay: !lambda "return (id(${devname}_start_filling_delay_ms).state);"
       - switch.turn_on: "${devname}_a_valve_beer"
       - wait_until:
-          condition: { binary_sensor.is_on: "${devname}_a_button_startstop" }
-          timeout: !lambda "return (id(${devname}_filling_timeout_sec).state * 1000);"
+          condition:
+            or:
+              - binary_sensor.is_on: "${devname}_a_button_startstop"
+              - binary_sensor.is_on: "${devname}_a_bottle_full"
+          timeout: !lambda "return static_cast<uint32_t>(id(${devname}_filling_timeout_sec).state * 1000.0f);"
       - switch.turn_off: "${devname}_a_valve_beer"
       - light.turn_off: { id: "${devname}_a_led_startstop" }
       - logger.log: { format: "* FILLING A: Filling stopped, continue de-pressurization", level: INFO }
@@ -786,13 +1086,21 @@ script:
       - logger.log: { format: "* FILLING B: CO2 Lavage complete, pressurizing...", level: INFO }
       - delay: !lambda "return (id(${devname}_presurize_duration_ms).state);"
       - switch.turn_off: "${devname}_b_valve_air"
+      - logger.log: { format: "* FILLING B: Flow sensor pulses reset", level: INFO }
+      - pulse_counter.set_total_pulses:
+          id: "${devname}_b_pulse_counter"
+          value: 0
+      - component.update: "${devname}_b_pulse_counter"
       - logger.log: { format: "* FILLING B: Filling Started", level: INFO }
       - switch.turn_on: "${devname}_b_valve_drizzle"
       - delay: !lambda "return (id(${devname}_start_filling_delay_ms).state);"
       - switch.turn_on: "${devname}_b_valve_beer"
       - wait_until:
-          condition: { binary_sensor.is_on: "${devname}_b_button_startstop" }
-          timeout: !lambda "return (id(${devname}_filling_timeout_sec).state * 1000);"
+          condition:
+            or:
+              - binary_sensor.is_on: "${devname}_b_button_startstop"
+              - binary_sensor.is_on: "${devname}_b_bottle_full"
+          timeout: !lambda "return static_cast<uint32_t>(id(${devname}_filling_timeout_sec).state * 1000.0f);"
       - switch.turn_off: "${devname}_b_valve_beer"
       - light.turn_off: { id: "${devname}_b_led_startstop" }
       - logger.log: { format: "* FILLING B: Filling stopped, continue de-pressurization", level: INFO }
