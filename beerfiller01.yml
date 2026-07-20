@@ -25,9 +25,14 @@ esphome:
   on_boot:
     priority: -100
     then:
+      - wait_until:
+          condition:
+            lambda: |-
+              return id(${devname}_power_switch).has_state();
+          timeout: 2s
       - script.execute: "${devname}_apply_bottle_volume"
       - script.execute: "${devname}_onoff_state"
-        
+
 esp32:
   variant: esp32
   framework:
@@ -53,7 +58,8 @@ wifi:
 #    dns1: 10.69.0.1
 
 api:
-  password: !secret api_pass
+  encryption:
+    key: !secret api_key
   reboot_timeout: "0s"
 
 ota:
@@ -399,7 +405,7 @@ light:
             - state: false
               duration: 700ms
   - platform: binary
-    name: "${devtitle} A LED Start/Stop"
+    name: "${devtitle} A LED StartStop"
     id: "${devname}_a_led_startstop"
     icon: "mdi:lightbulb"
     output: "${devname}_output_a_led_green"
@@ -428,7 +434,7 @@ light:
             - state: false
               duration: 700ms
   - platform: binary
-    name: "${devtitle} B LED Start/Stop"
+    name: "${devtitle} B LED StartStop"
     id: "${devname}_b_led_startstop"
     icon: "mdi:lightbulb"
     output: "${devname}_output_b_led_green"
@@ -457,7 +463,7 @@ light:
             - state: false
               duration: 700ms
   - platform: binary
-    name: "${devtitle} C LED Start/Stop"
+    name: "${devtitle} C LED StartStop"
     id: "${devname}_c_led_startstop"
     icon: "mdi:lightbulb"
     output: "${devname}_output_c_led_green"
@@ -520,7 +526,9 @@ sensor:
     icon: "mdi:cup-water"
     unit_of_measurement: "ml"
     accuracy_decimals: 0
-    update_interval: 50ms
+    update_interval: 500ms
+    filters:
+      - delta: 1.0
     lambda: |-
       if (isnan(id(${devname}_a_pulse_total).state) ||
           isnan(id(${devname}_ml_per_pulse).state)) {
@@ -536,7 +544,9 @@ sensor:
     icon: "mdi:target"
     unit_of_measurement: "ml"
     accuracy_decimals: 0
-    update_interval: 250ms
+    update_interval: 1s
+    filters:
+      - delta: 1.0
     lambda: |-
       if (isnan(id(${devname}_bottle_volume_ml).state) ||
           isnan(id(${devname}_volume_correction_ml).state)) {
@@ -587,7 +597,9 @@ sensor:
     icon: "mdi:cup-water"
     unit_of_measurement: "ml"
     accuracy_decimals: 0
-    update_interval: 50ms
+    update_interval: 500ms
+    filters:
+      - delta: 1.0
     lambda: |-
       if (isnan(id(${devname}_b_pulse_total).state) ||
           isnan(id(${devname}_ml_per_pulse).state)) {
@@ -603,7 +615,9 @@ sensor:
     icon: "mdi:target"
     unit_of_measurement: "ml"
     accuracy_decimals: 0
-    update_interval: 250ms
+    update_interval: 1s
+    filters:
+      - delta: 1.0
     lambda: |-
       if (isnan(id(${devname}_bottle_volume_ml).state) ||
           isnan(id(${devname}_volume_correction_ml).state)) {
@@ -615,7 +629,6 @@ sensor:
         id(${devname}_volume_correction_ml).state;
 
       return std::max(0.0f, target);
-
         
 binary_sensor:
   - platform: gpio
@@ -660,7 +673,7 @@ binary_sensor:
         - switch.turn_off: "${devname}_script_a_bottle_remove_control"
   
   - platform: gpio
-    name: "${devtitle} A Button Start/Stop"
+    name: "${devtitle} A Button StartStop"
     id: "${devname}_a_button_startstop"
     icon: "mdi:restart"
     pin:
@@ -682,7 +695,7 @@ binary_sensor:
     - min_length: 1500ms
       max_length: 10000ms
       then:
-        - logger.log: "A Start/Stop LONG press..."
+        - logger.log: "A StartStop LONG press..."
         - switch.turn_off: "${devname}_script_a_filling_control"
 
   - platform: gpio
@@ -712,7 +725,7 @@ binary_sensor:
         - switch.turn_off: "${devname}_script_b_bottle_remove_control"
   
   - platform: gpio
-    name: "${devtitle} B Button Start/Stop"
+    name: "${devtitle} B Button StartStop"
     id: "${devname}_b_button_startstop"
     icon: "mdi:restart"
     pin:
@@ -734,7 +747,7 @@ binary_sensor:
     - min_length: 1500ms
       max_length: 10000ms
       then:
-        - logger.log: "B Start/Stop LONG press..."
+        - logger.log: "B StartStop LONG press..."
         - switch.turn_off: "${devname}_script_b_filling_control"
 
   - platform: gpio
@@ -764,7 +777,7 @@ binary_sensor:
         - switch.turn_off: "${devname}_script_c_bottle_remove_control"
   
   - platform: gpio
-    name: "${devtitle} C Button Start/Stop"
+    name: "${devtitle} C Button StartStop"
     id: "${devname}_c_button_startstop"
     icon: "mdi:restart"
     pin:
@@ -786,7 +799,7 @@ binary_sensor:
     - min_length: 1500ms
       max_length: 10000ms
       then:
-        - logger.log: "C Start/Stop LONG press..."
+        - logger.log: "C StartStop LONG press..."
         - switch.turn_off: "${devname}_script_c_filling_control"
   - platform: template
     id: "${devname}_a_bottle_full"
